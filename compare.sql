@@ -22,7 +22,6 @@ CREATE OR REPLACE PROCEDURE track_customer_changes IS
         END IF;
         RETURN FALSE;
     END;
-
     -- 定义字段比较过程
     PROCEDURE compare_fields(
         p_customer_id IN NUMBER,
