@@ -2,26 +2,25 @@ CREATE OR REPLACE PROCEDURE track_customer_changes IS
     v_current_date DATE;
     v_previous_date DATE;
     
-    -- 定义字段比较函数
-    FUNCTION compare_and_log(
+    -- 将 compare_and_log 改为过程
+    PROCEDURE compare_and_log(
         p_customer_id IN NUMBER,
         p_change_type IN VARCHAR2,
         p_field_name IN VARCHAR2,
         p_old_value IN VARCHAR2,
         p_new_value IN VARCHAR2
-    ) RETURN BOOLEAN IS
+    ) IS
     BEGIN
         IF p_old_value IS NULL AND p_new_value IS NULL THEN
-            RETURN FALSE;
+            RETURN; -- 直接返回，不记录
         ELSIF NVL(p_old_value, 'NULL') != NVL(p_new_value, 'NULL') THEN
             INSERT INTO customer_change_log(customer_id, change_type, change_field, 
                                           old_value, new_value, change_date)
             VALUES(p_customer_id, p_change_type, p_field_name, 
                   p_old_value, p_new_value, SYSDATE);
-            RETURN TRUE;
         END IF;
-        RETURN FALSE;
     END;
+    
     -- 定义字段比较过程
     PROCEDURE compare_fields(
         p_customer_id IN NUMBER,
@@ -48,6 +47,7 @@ CREATE OR REPLACE PROCEDURE track_customer_changes IS
             FETCH cur INTO v_new_value, v_old_value;
             CLOSE cur;
             
+            -- 直接调用过程
             compare_and_log(p_customer_id, p_change_type, p_fields(i), 
                           v_old_value, v_new_value);
         END LOOP;
@@ -98,3 +98,4 @@ EXCEPTION
         ROLLBACK;
         RAISE;
 END;
+/
