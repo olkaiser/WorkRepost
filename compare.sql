@@ -2,7 +2,7 @@ CREATE OR REPLACE PROCEDURE track_customer_changes IS
     v_current_date DATE;
     v_previous_date DATE;
     
-    -- 将 compare_and_log 改为过程
+    -- 定义字段比较过程
     PROCEDURE compare_and_log(
         p_customer_id IN NUMBER,
         p_change_type IN VARCHAR2,
@@ -12,7 +12,7 @@ CREATE OR REPLACE PROCEDURE track_customer_changes IS
     ) IS
     BEGIN
         IF p_old_value IS NULL AND p_new_value IS NULL THEN
-            RETURN; -- 直接返回，不记录
+            RETURN;
         ELSIF NVL(p_old_value, 'NULL') != NVL(p_new_value, 'NULL') THEN
             INSERT INTO customer_change_log(customer_id, change_type, change_field, 
                                           old_value, new_value, change_date)
@@ -20,7 +20,7 @@ CREATE OR REPLACE PROCEDURE track_customer_changes IS
                   p_old_value, p_new_value, SYSDATE);
         END IF;
     END;
-    
+
     -- 定义字段比较过程
     PROCEDURE compare_fields(
         p_customer_id IN NUMBER,
@@ -47,7 +47,6 @@ CREATE OR REPLACE PROCEDURE track_customer_changes IS
             FETCH cur INTO v_new_value, v_old_value;
             CLOSE cur;
             
-            -- 直接调用过程
             compare_and_log(p_customer_id, p_change_type, p_fields(i), 
                           v_old_value, v_new_value);
         END LOOP;
@@ -67,13 +66,13 @@ BEGIN
     -- 定义需要比较的字段
     DECLARE
         customer_fields SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST(
-            'customer_name', 'address', 'phone', 'email', 'status' -- 添加更多字段
+            'customer_name', 'address', 'phone', 'email', 'status'
         );
         contact_fields SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST(
-            'contact_name', 'contact_phone', 'email', 'position' -- 添加更多字段
+            'contact_name', 'contact_phone', 'email', 'position'
         );
         company_fields SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST(
-            'company_name', 'industry', 'website', 'revenue' -- 添加更多字段
+            'company_name', 'industry', 'website', 'revenue'
         );
     BEGIN
         -- 处理客户表
