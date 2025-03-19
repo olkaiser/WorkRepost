@@ -1,6 +1,6 @@
 CREATE OR REPLACE PROCEDURE log_customer_changes IS
-  v_max_date      DATE;        -- 最大数据日期
-  v_previous_date DATE;        -- 对比基准日期
+  v_max_date      VARCHAR2(50);        -- 最大数据日期
+  v_previous_date VARCHAR2(50);        -- 对比基准日期
   v_column_list   VARCHAR2(4000);  -- 动态字段列表
 
   -- 获取所有需要对比的字段（排除DATA_DATE）
@@ -48,17 +48,7 @@ BEGIN
       '(SELECT customer_no, '||v_column_list||' '||
        'FROM RRA_SIDS.S_FLC_STTM_CUSTOMER '||
        'WHERE DATA_DATE = :2)'||
-    ') UNION ALL '||
-    'SELECT customer_no FROM ('||
-      '(SELECT customer_no, '||v_column_list||' '||
-       'FROM RRA_SIDS.S_FLC_STTM_CUSTOMER '||
-       'WHERE DATA_DATE = :2) '||
-      'MINUS '||
-      '(SELECT customer_no, '||v_column_list||' '||
-       'FROM RRA_SIDS.S_FLC_STTM_CUSTOMER '||
-       'WHERE DATA_DATE = :1)'||
-    ')' 
-  USING v_max_date, v_previous_date, v_previous_date, v_max_date;
+    ')' ;
 
   -- 步骤2：遍历变动客户
   LOOP
