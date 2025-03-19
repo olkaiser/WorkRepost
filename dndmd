@@ -9,7 +9,9 @@ CREATE OR REPLACE PROCEDURE log_customer_changes IS
     FROM all_tab_columns
     WHERE owner = 'RRA_SIDS'
       AND table_name = 'S_FLC_STTM_CUSTOMER'
-      AND column_name != 'DATA_DATE'
+      AND column_name NOT IN
+('CUSTOMER_ID', 'DATA_DATE", 'BATCH_DATE' ,
+'MARER_ DT_STAMP', 'MAKER_ID', 'CHECKER_ID', ' CHECKER_DI_STAMP')
     ORDER BY column_id;  -- 确保字段顺序一致
 
   -- 动态游标（处理字段级变动）
@@ -35,7 +37,9 @@ BEGIN
     FROM all_tab_columns
     WHERE owner = 'RRA_SIDS'
       AND table_name = 'S_FLC_STTM_CUSTOMER'
-      AND column_name != 'DATA_DATE'
+      AND column_name NOT IN
+('CUSTOMER_ID', 'DATA_DATE", 'BATCH_DATE' ,
+'MARER_ DT_STAMP', 'MAKER_ID', 'CHECKER_ID', ' CHECKER_DI_STAMP')
   );
 
   -- 步骤1：找出有字段变动的客户（使用动态MINUS比对）
@@ -97,13 +101,14 @@ BEGIN
       THEN
         INSERT INTO customer_change_log (
           customer_no, change_type,
-          change_field, old_value, new_value
+          change_field, old_value, new_value, data_date
         ) VALUES (
           v_customer_no,
           v_change_type,
           col_rec.column_name,
           v_old_val,
-          v_new_val
+          v_new_val,
+          v_max_date
         );
       END IF;
     END LOOP;  -- 结束字段循环
