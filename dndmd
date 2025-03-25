@@ -1,88 +1,127 @@
 CREATE OR REPLACE PROCEDURE log_customer_changes IS
-  v_max_date      DATE;      -- 表中最大日期
-  v_previous_date DATE;      -- 最大日期的前一天
-  v_old_val       VARCHAR2(4000);
-  v_new_val       VARCHAR2(4000);
-  v_change_type   VARCHAR2(20);
+  v_max_date      VARCHAR2(50);        -- 最大数据日期
+  v_previous_date VARCHAR2(50);        -- 对比基准日期
+  v_column_list   VARCHAR2(4000);  -- 动态字段列表
 
-  -- 获取所有需比对的字段
+  -- 获取所有需要对比的字段（排除DATA_DATE）
   CURSOR c_columns IS
     SELECT column_name
     FROM all_tab_columns
     WHERE owner = 'RRA_SIDS'
-      AND table_name = 'S_FLC_STTM_CUSTMOER'
-      AND column_name != 'DATA_DATE'; 
+      AND table_name = 'S_FLC_STTM_CUSTOMER'
+      AND column_name NOT IN
+('CUSTOMER_ID', 'DATA_DATE", 'BATCH_DATE' ,
+'MARER_ DT_STAMP', 'MAKER_ID', 'CHECKER_ID', ' CHECKER_DI_STAMP')
+    ORDER BY column_id;  -- 确保字段顺序一致
 
-  -- 获取变更客户列表（动态日期）
-  CURSOR c_changed_customers IS
-    SELECT customer_no FROM (
-      (SELECT customer_no FROM RRA_SIDS.S_FLC_STTM_CUSTMOER WHERE DATA_DATE = v_max_date)
-      MINUS
-      (SELECT customer_no FROM RRA_SIDS.S_FLC_STTM_CUSTMOER WHERE DATA_DATE = v_previous_date)
-    ) UNION ALL (
-      (SELECT customer_no FROM RRA_SIDS.S_FLC_STTM_CUSTMOER WHERE DATA_DATE = v_previous_date)
-      MINUS
-      (SELECT customer_no FROM RRA_SIDS.S_FLC_STTM_CUSTMOER WHERE DATA_DATE = v_max_date)
-    );
+  -- 动态游标（处理字段级变动）
+  TYPE curtype IS REF CURSOR;
+  c_changes curtype;
 
+  -- 记录字段
+  v_customer_no  VARCHAR2(50);
+  v_old_val      VARCHAR2(4000);
+  v_new_val      VARCHAR2(4000);
+  v_change_type  VARCHAR2(20);
 BEGIN
-  -- 获取最大日期及前一天
+  -- 获取时间范围
   SELECT MAX(DATA_DATE) INTO v_max_date 
-  FROM RRA_SIDS.S_FLC_STTM_CUSTMOER;
-  
+  FROM RRA_SIDS.S_FLC_STTM_CUSTOMER;
   v_previous_date := v_max_date - 1;
 
-  -- 主处理逻辑
-  FOR cust IN c_changed_customers LOOP
-    FOR col IN c_columns LOOP
+  -- 生成动态字段列表
+  SELECT LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_id)
+  INTO v_column_list
+  FROM (
+    SELECT column_name, column_id
+    FROM all_tab_columns
+    WHERE owner = 'RRA_SIDS'
+      AND table_name = 'S_FLC_STTM_CUSTOMER'
+      AND column_name NOT IN
+('CUSTOMER_ID', 'DATA_DATE", 'BATCH_DATE' ,
+'MARER_ DT_STAMP', 'MAKER_ID', 'CHECKER_ID', ' CHECKER_DI_STAMP')
+  );
+
+  -- 步骤1：找出有字段变动的客户（使用动态MINUS比对）
+  OPEN c_changes FOR 
+    'SELECT customer_no FROM (' ||
+      '(SELECT customer_no, '||v_column_list||' '||
+       'FROM RRA_SIDS.S_FLC_STTM_CUSTOMER '||
+       'WHERE DATA_DATE = :1) '||
+      'MINUS '||
+      '(SELECT customer_no, '||v_column_list||' '||
+       'FROM RRA_SIDS.S_FLC_STTM_CUSTOMER '||
+       'WHERE DATA_DATE = :2)'||
+    ')' ;
+
+  -- 步骤2：遍历变动客户
+  LOOP
+    FETCH c_changes INTO v_customer_no;
+    EXIT WHEN c_changes%NOTFOUND;
+
+    -- 步骤3：遍历每个字段进行比对
+    FOR col_rec IN c_columns LOOP
       -- 获取旧值（前一天）
       BEGIN
         EXECUTE IMMEDIATE 
-          'SELECT '||col.column_name||' FROM RRA_SIDS.S_FLC_STTM_CUSTMOER 
-           WHERE DATA_DATE = :1 AND customer_no = :2'
+          'SELECT '||col_rec.column_name||' 
+           FROM RRA_SIDS.S_FLC_STTM_CUSTOMER 
+           WHERE DATA_DATE = :1 
+             AND customer_no = :2'
           INTO v_old_val
-          USING v_previous_date, cust.customer_no;
+          USING v_previous_date, v_customer_no;
       EXCEPTION
         WHEN NO_DATA_FOUND THEN v_old_val := NULL;
       END;
 
-      -- 获取新值（最大日期）
+      -- 获取新值（当天）
       BEGIN
         EXECUTE IMMEDIATE 
-          'SELECT '||col.column_name||' FROM RRA_SIDS.S_FLC_STTM_CUSTMOER 
-           WHERE DATA_DATE = :1 AND customer_no = :2'
+          'SELECT '||col_rec.column_name||' 
+           FROM RRA_SIDS.S_FLC_STTM_CUSTOMER 
+           WHERE DATA_DATE = :1 
+             AND customer_no = :2'
           INTO v_new_val
-          USING v_max_date, cust.customer_no;
+          USING v_max_date, v_customer_no;
       EXCEPTION
         WHEN NO_DATA_FOUND THEN v_new_val := NULL;
       END;
 
-      -- 判断变更类型（示例逻辑）
-      v_change_type := CASE 
-        WHEN col.column_name LIKE 'CONTACT%' THEN '联系人'
-        WHEN col.column_name LIKE 'COMPANY%' THEN '公司信息'
+      -- 判断变更类型（按字段前缀）
+      v_change_type := CASE
+        WHEN col_rec.column_name LIKE 'CONTACT%' THEN '联系人'
+        WHEN col_rec.column_name LIKE 'COMPANY%' THEN '公司信息'
         ELSE '客户'
       END;
 
-      -- 插入变更记录
+      -- 记录差异
       IF v_old_val != v_new_val 
         OR (v_old_val IS NULL AND v_new_val IS NOT NULL)
-        OR (v_old_val IS NOT NULL AND v_new_val IS NULL) 
+        OR (v_old_val IS NOT NULL AND v_new_val IS NULL)
       THEN
         INSERT INTO customer_change_log (
-          customer_no, change_type, 
-          change_field, old_value, new_value
+          customer_no, change_type,
+          change_field, old_value, new_value, data_date
         ) VALUES (
-          cust.customer_no, v_change_type,
-          col.column_name, v_old_val, v_new_val
+          v_customer_no,
+          v_change_type,
+          col_rec.column_name,
+          v_old_val,
+          v_new_val,
+          v_max_date
         );
       END IF;
-    END LOOP;
-  END LOOP;
+    END LOOP;  -- 结束字段循环
+  END LOOP;    -- 结束客户循环
+
   COMMIT;
+  CLOSE c_changes;
 
 EXCEPTION
   WHEN OTHERS THEN
+    IF c_changes%ISOPEN THEN
+      CLOSE c_changes;
+    END IF;
     ROLLBACK;
     RAISE;
 END log_customer_changes;
